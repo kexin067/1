@@ -1,0 +1,272 @@
+---
+title: "final question"
+author: "kathy"
+date: "4/24/2022"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r ,include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(digits=2)
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(dplyr)
+library(psych)
+library(lavaan)
+library(GPArotation)
+library(semPlot)
+library(tidySEM)
+library(broom.mixed)
+library(effects)
+library(DHARMa)
+library(knitr)
+library(sjPlot)
+library(pander)
+library(lmeresampler)
+```
+
+##Section 1
+#Q1
+```{r ,include=FALSE}
+load(url("https://uoepsy.github.io/data/metaphor.RData"))
+metaphor$Correct <- as.factor(metaphor$Correct)
+summary(metaphor)
+```
+
+```{r ,include=FALSE}
+meta.number<- metaphor %>% 
+  select(-"Item") %>%
+  mutate(Cor.cate = ifelse(Correct == 1, "NumCorrect", "NumError")) %>%
+  group_by(SubjectCode, Condition) %>%
+  pivot_wider(names_from = Cor.cate, values_from = Correct) %>%
+  mutate(NumCorrect = lengths(NumCorrect)) %>%
+  mutate(NumError = lengths(NumError)) %>%
+  mutate(PropCorrect = NumCorrect / (NumCorrect + NumError))
+```
+
+```{r ,include=FALSE}
+ggplot(data = meta.number,  mapping = aes(y = NumCorrect, x = Condition)) +
+  geom_boxplot() + coord_flip()
+  scale_x_continuous(limits = c(-2,2), breaks = NULL)
+```
+
+```{r ,fig.asf=.6,fig.cap="Figure 1",message=FALSE}
+ggplot(meta.number, aes(Condition, NumCorrect, col=SubjectCode))+
+  geom_jitter()+
+  geom_hline(yintercept = 0.5, linetype="dashed")  
+```
+
+```{r,include=FALSE}
+meta0 <- glmer(cbind(NumCorrect,NumError) ~ 1 +  (Condition | SubjectCode),
+                data=meta.number, family="binomial")
+
+meta1.base <- glmer(cbind(NumCorrect,NumError) ~ Condition + (Condition | SubjectCode) ,
+                data=meta.number,family = "binomial",
+                control = glmerControl(optimizer="bobyqa"))
+
+anova(meta0,meta1.base)
+isSingular(meta1.base)
+summary(meta1.base)
+
+```
+
+
+```{r,include=FALSE}
+exp(cbind(OR = fixef(meta1.base), confint(meta1.base, method="boot")))
+```
+
+```{r,include=FALSE}
+tab1<-sjPlot::tab_model(meta1.base)
+sjPlot:::knit_print.sjTable(tab1) 
+```
+
+```{r,include=FALSE}
+testDispersion(meta1.base)
+Output1 <- simulateResiduals(fittedModel = meta1.base, plot=F) 
+plotQQunif(Output1)
+```
+
+```{r,fig.asf=.6,fig.cap="Figure 2",message=FALSE}
+ggplot(meta.number, aes(fct_rev(Condition), NumCorrect, fill=Condition)) + 
+  geom_violin() + 
+  stat_summary(aes(y=fitted(meta1.base)), fun=mean, geom = "point", size=2, position=position_dodge(width=.9)) + 
+  geom_hline(yintercept = 0.5, linetype="dashed") + 
+  theme_bw() + 
+  labs(y="Correct Number", x="Condition")
+```
+
+#Q2 
+
+```{r,fig.asf=.6,fig.cap="Figure 3",message=FALSE}
+load(url("https://uoepsy.github.io/data/metaphor.RData"))
+ggplot(metaphor, aes(RPM, Correct, color=Condition, fill=Condition)) +
+  stat_summary(fun=mean, geom="line") + 
+  stat_summary(fun.data=mean_se, geom="ribbon", color=NA, alpha=0.3) + 
+  theme_bw() + expand_limits(y=c(0,1)) +
+  labs(y="Correct Proprtion", x="Fluid Intelligence（RPM score）")
+
+```
+                         
+
+```{r,include=FALSE}
+source("https://uoepsy.github.io/msmr/functions/code_poly.R")
+meta2.data <- code_poly( metaphor, predictor = "RPM", poly.order = 3, orthogonal = FALSE, draw.poly = FALSE)
+summary(meta2.data)
+head(meta2.data)
+str(meta2.data)
+
+meta2.m4 <- lmer(Correct ~ (poly1 + poly2)*Condition + (1 | SubjectCode) + (1 | Item),
+                data = meta2.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+VarCorr(meta2.m4)
+isSingular(meta2.m4)
+summary(meta2.m4)
+
+meta2.m0 <- lmer(Correct ~ 1 + (1 | SubjectCode) + (1 | Item),
+                data = meta2.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta2.m1 <- lmer(Correct ~ poly1 + (1 | SubjectCode) + (1 | Item),
+                data = meta2.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta2.m2 <- lmer(Correct ~ poly1 + poly2 + (1 | SubjectCode) + (1 | Item),
+                data = meta2.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta2.m3 <- lmer(Correct ~ poly1 + poly2 + Condition + (1 | SubjectCode) + (1 | Item),
+                data = meta2.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+
+summary(meta2.m3)
+anova(meta2.m0,meta2.m1,meta2.m2,meta2.m3,meta2.m4)
+```
+
+```{r,include=FALSE}
+bootstrap(meta2.m3, .f=fixef, type = "case", B = 1000, resample = c(FALSE,TRUE,FALSE))
+confint(btmeta2, type = "perc")
+
+```
+
+```{r,include=FALSE}
+tab2<-sjPlot::tab_model(meta2.m3)
+sjPlot:::knit_print.sjTable(tab2) 
+```
+
+```{r,fig.asf=.6,fig.cap="Figure 4",message=FALSE}
+broom.mixed::augment(meta2.m3) %>%
+  ggplot(., aes(poly1+poly2, Correct, color=Condition)) +
+  stat_summary(fun.data=mean_se, geom="pointrange") +
+  stat_summary(aes(y=.fitted), fun=mean, geom="line") +
+  theme_bw() + 
+  expand_limits(y=c(0,1)) + 
+  labs(y="Correct Proportion", x="Fluid Intelligence") 
+```
+
+#Q3 
+```{r,fig.asf=.6,fig.cap="Figure 5",message=FALSE}
+load(url("https://uoepsy.github.io/data/metaphor.RData"))
+ggplot(metaphor, aes(SST, Correct, color=Condition, fill=Condition)) +
+  stat_summary(fun=mean, geom="line") + 
+  stat_summary(fun.data=mean_se, geom="ribbon", color=NA, alpha=0.3) + 
+  theme_bw() + expand_limits(y=c(0,1)) + 
+  labs(y="Correct Proportion", x="Crystalized Intelligence (SST score)")
+```
+
+```{r,include=FALSE}
+meta3.data <- code_poly( metaphor, predictor = "SST", poly.order = 3, orthogonal = FALSE, draw.poly = FALSE)
+summary(meta3.data)
+head(meta3.data)
+
+meta3.m4 <- lmer(Correct ~ (poly1 + poly2)*Condition + (1 | SubjectCode) + (1 | Item),
+                data = meta3.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+isSingular(meta3.m4)
+summary(meta3.m4)
+
+meta3.m0 <- lmer(Correct ~ 1 + (1 | SubjectCode) + (1 | Item),
+                data = meta3.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta3.m1 <- lmer(Correct ~ poly1  + (1 | SubjectCode) + (1 | Item),
+                data = meta3.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta3.m2 <- lmer(Correct ~ poly1  + poly2 + (1 | SubjectCode) + (1 | Item),
+                data = meta3.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+meta3.m3 <-  lmer(Correct ~ poly1  + poly2 + Condition + (1 | SubjectCode) + (1 | Item),
+                data = meta3.data, REML=F, control=lmerControl(optimizer="bobyqa"))
+summary(meta3.m3)
+
+
+anova(meta3.m0,meta3.m1,meta3.m2,meta3.m3,meta3.m4)
+```
+
+```{r,include=FALSE}
+
+bootstrap(meta3.m2, .f=fixef, type = "case", B = 1000, resample = c(FALSE,TRUE,FALSE))
+confint(btmeta3, type = "perc")
+
+```
+
+```{r,include=FALSE}
+tab3<-sjPlot::tab_model(meta3.m2)
+sjPlot:::knit_print.sjTable(tab3) 
+```
+
+```{r ,fig.asf=.6,fig.cap="Figure 6",message=FALSE}
+broom.mixed::augment(meta3.m3) %>%
+  ggplot(., aes(poly1+poly2, Correct, color=Condition)) +
+  stat_summary(fun.data=mean_se, geom="pointrange") +
+  stat_summary(aes(y=.fitted), fun=mean, geom="line") +
+  theme_bw() + 
+  expand_limits(y=c(0,1)) + 
+  labs(y="Correct Proportion", x="Fluid Intelligence") 
+```
+
+##Section 2
+ 
+```{r,include=FALSE}
+sec2data <- read_csv("https://uoepsy.github.io/data/msmr_2122_assignment.csv")
+describe(sec2data)
+summary(sec2data)
+
+multi.hist(sec2data,global = F)
+```
+
+```{r CFA,include=FALSE}
+Dep.m <- "Dep =~ Dep1 + Dep2 + Dep3 + Dep4 + Dep5 + Dep6"
+Avail.m <- "Avail =~ Avail1  + Avail2 + Avail3 + Avail4"
+Cemo.m <-"CAnx =~ CAnx1 + CAnx2 + CAnx3 + CAnx4
+          CDep =~ CDep1 + CDep2 + CDep3 + CDep4
+          CAnx~CDep"
+  
+Dep.mfit <- cfa(Dep.m, data = sec2data, std.lv = TRUE, missing='FIML', estimator="MLR")
+Avail.mfit <- cfa(Avail.m , data = sec2data, std.lv = TRUE, missing='FIML', estimator="MLR")
+Cemo.mfit <- cfa(Cemo.m, data = sec2data, std.lv = TRUE, missing='FIML', estimator="MLR")
+
+summary(Dep.mfit, fit.measures=T, standardized=T)
+summary(Avail.mfit, fit.measures=T, standardized=T)
+summary(Cemo.mfit, fit.measures=T, standardized=T)
+
+modindices(Avail.mfit, sort=T)
+```
+
+```{r SEM,include=FALSE}
+SEM_model <- 
+ "Dep =~ Dep1 + Dep2 + Dep3 + Dep4 + Dep5 + Dep6
+  Avail =~ Avail1  + Avail2 + Avail3 + Avail4
+  Cemo =~ CAnx1 + CAnx2 + CAnx3 + CAnx4 + CDep1 + CDep2 + CDep3 + CDep4
+
+#regressions  
+  Cemo ~ a*Avail
+  Avail ~ b*Dep
+  Cemo ~ Dep
+
+indirect:=a*b  #the indirect effect of Dep on Cemo via Avail" 
+
+
+SEM_model.est <- sem(SEM_model, se='bootstrap',data=sec2data)
+
+summary(SEM_model.est, fit.measures=T, standardized=T, ci=T)
+
+```
+
+```{r,fig.asf=.6,fig.cap="Figure 7",message=FALSE}
+plotsem <- sem(SEM_model, data=sec2data)
+summary(plotsem)
+semPaths(plotsem, whatLabels = "est", intercepts = F)
+
+```
